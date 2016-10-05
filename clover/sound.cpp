@@ -203,12 +203,11 @@ void play_sound(){
                 volume[ch][i] = 0.0;
             }
 
-            for(int j = 0; j < spectrum_length; ++j){
+            for(int j = 0; j < buffer_length / m - (spectrum_length / m); ++j){
                 std::memset(fft_input_signal, 0, sizeof(fft_input_signal));
                 std::memset(fft_output_signal, 0, sizeof(fft_output_signal));
-                int k = 0;
-                for(std::size_t i = j * m * channels + ch; i < frameCount; i += channels, ++k){
-                    fft_input_signal[k] = out[i];
+                for(int i = 0; i < n; ++i){
+                    fft_input_signal[i] = out[(j * m * channels + i * channels + ch) % frameCount];
                 }
                 fft(fft_input_signal, fft_output_signal, lg_spectrum_length);
 

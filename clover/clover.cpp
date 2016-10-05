@@ -1,7 +1,8 @@
 #define _USE_MATH_DEFINES
-#define parallel_num 8
+#define parallel_num 4
 
 #include <array>
+#include <vector>
 #include <limits>
 #include <memory>
 #include <chrono>
@@ -14,6 +15,8 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <thread>
+#include <mutex>
 #include <cmath>
 #include <portaudio.h>
 #include <DxLib.h>
@@ -653,14 +656,16 @@ namespace object{
     class tasklist{
     public:
         using task = task<T>;
-        static const int actual_parallel_num = parallel_num / parallel_num + (parallel_num % parallel_num > 0 ? 1 : 0);
+        static const int task_num = N;
+        static const int actual_parallel_num = parallel_num;
         task active[actual_parallel_num];
 
     private:
-        std::size_t parallel_count = 0;
+        int parallel_count = 0;
         std::size_t size_ = 0;
         task *free_;
         std::array<task, N> arr;
+        std::mutex mtx;
 
     public:
 
@@ -681,6 +686,7 @@ namespace object{
 
         // タスクを生成する
         task *create_task(){
+            std::lock_guard<std::mutex> lock(mtx);
             if(size_ == N){
                 return nullptr;
             }
@@ -698,6 +704,7 @@ namespace object{
 
         // タスクを削除する
         task *delete_task(task *t){
+            std::lock_guard<std::mutex> lock(mtx);
             t->obj.dtor();
             --size_;
             task *r = t->prev, *s = t->next;
@@ -737,21 +744,29 @@ namespace object{
 
         // タスクを回す
         void update(){
-            #pragma omp parallel for
+            std::vector<std::thread> vec;
+            vec.reserve(actual_parallel_num);
             for(int i = 0; i < actual_parallel_num; ++i){
-                task *t = active[i].next;
-                while(t != &active[i]){
-                    static_cast<object<T>*>(&t->obj)->update(t);
-                    if(t != &active[i]){
-                        t = t->next;
+                vec.push_back(std::thread([this, i]{
+                    task *t = active[i].next;
+                    task *s = nullptr, *r = nullptr;
+                    while(t != &active[i]){
+                        static_cast<object<T>*>(&t->obj)->update(t);
+                        if(t != &active[i]){
+                            r = s;
+                            s = t;
+                            t = t->next;
+                        }
                     }
-                }
+                }));
+            }
+            for(int i = 0; i < actual_parallel_num; ++i){
+                vec[i].join();
             }
         }
 
         // 描画タスクを回す
         void draw() const{
-            #pragma omp parallel for
             for(int i = 0; i < actual_parallel_num; ++i){
                 task *t = active[i].next;
                 while(t != &active[i]){
@@ -919,7 +934,7 @@ namespace object{
         // 基本パーティクル数
         static const int particle_num = 6;
 
-        using tasklist_type = tasklist<spark, 1024 * particle_num>;
+        using tasklist_type = tasklist<spark, 256 * 5 * particle_num>;
         static tasklist_type &tasklist(){
             static tasklist_type t;
             return t;
@@ -1315,6 +1330,10 @@ namespace object{
         // 斜めにも対応できるように
         int move_dir;
 
+        // 自動コントロール
+        bool auto_ctrl = false;
+        bool auto_left, auto_right, auto_up, auto_down;
+
         void ctor(){
             dir = dir_t::down;
             coord[0] = field_width / 2;
@@ -1323,19 +1342,149 @@ namespace object{
             walk_count = 0;
         }
 
+        struct algorithm_member_direction{
+            enum class dir{
+                right,
+                lower_right,
+                down,
+                lower_left,
+                left,
+                upper_left,
+                up,
+                upper_right,
+                stop
+            };
+
+            // 各方向の重み
+            double weight[9] = { 0.0 };
+
+            // 重みを正規化
+            void normalize(){
+                double w[9];
+                for(int i = 0; i < 9; ++i){
+                    w[i] = weight[i];
+                }
+                std::sort(&w[0], &w[8], std::greater<double>());
+                if(w[0] != 0.0){
+                    for(int i = 0; i < 9; ++i){
+                        weight[i] /= w[0];
+                    }
+                }
+            }
+        };
+
+        void auto_avoidance(){
+            // 拒否方向
+            algorithm_member_direction veto;
+            // 反射方向
+            algorithm_member_direction reflection_line;
+            /// 忘却方向
+            algorithm_member_direction oblivion;
+            // 切り返し方向
+            algorithm_member_direction roundtrip;
+            // 場所取り
+            algorithm_member_direction position;
+
+            // Player座標
+            const double x = coord[0], y = coord[1];
+
+            // 数学定数
+            const double pi = std::atan(1.0) * 4.0;
+            const double d90 = pi / 2;
+
+            auto &list_manager_bullet_arrow = bullet_arrow::tasklist();
+            for(int actual_parallel_list_count = 0; actual_parallel_list_count < bullet_arrow::tasklist_type::actual_parallel_num; ++actual_parallel_list_count){
+                auto *t = list_manager_bullet_arrow.active[actual_parallel_list_count].next;
+                while(t != &list_manager_bullet_arrow.active[actual_parallel_list_count]){
+                    // Bullet Arrow座標．
+                    const double bx = t->obj.coord[0], by = t->obj.coord[1];
+                    const double dx = t->obj.speed[0], dy = t->obj.speed[1];
+
+                    // reflection_line
+                    {
+                        const double thredhold_dist_x = field_width / 2;
+                        const double thredhold_dist_y = field_height / 2;
+                        if(
+                            x - thredhold_dist_x <= bx && x + thredhold_dist_x >= bx &&
+                            y - thredhold_dist_y <= by && y + thredhold_dist_y >= by
+                        ){
+                            // 角度
+                            const double theta = std::atan2(by - y, bx - x); // プレイヤーからbullet arrowまでの角度
+                            const double phi = std::atan2(dy, dx); // bullet arrowの進行角度
+                            const double diff_1 = std::abs(theta - phi);
+                            const double diff_2 = theta >= phi ? (2 * pi - phi) - theta : (2 * pi - theta) - phi;
+                            const double diff = (std::min)(diff_1, diff_2);
+                            int avoid_dir = 0;
+                            if(diff < d90){
+                                const double psi = d90 - diff;
+                                if(psi <= pi * 1 / 8 || psi > pi * 15 / 8){
+                                    if(psi <= pi * 1 / 8){
+                                        avoid_dir = 6;
+                                    }else{
+                                        avoid_dir = 2;
+                                    }
+                                }else{
+                                    for(int i = 3; i <= 15; i += 2){
+                                        if(psi <= pi * i / 8 && psi > pi * (i - 2) / 8){
+                                            if(psi >= pi * (i - 1) / 8){
+                                                avoid_dir = (7 + (i - 3) / 2) % 8;
+                                            }else{
+                                                avoid_dir = (3 + (i - 3) / 2) % 8;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                                reflection_line.weight[avoid_dir] += 1.0 / (bullet_arrow::tasklist_type::task_num * 3);
+                            }
+
+                            // 速度
+                            ;
+
+                            // 距離
+                            ;
+                        }
+                    }
+                }
+            }
+
+            // position
+            {
+                const double center_x = field_width / 2;
+                const double center_y = field_height / 2;
+                const double dist = (x - center_x) * (x - center_x) + (y - center_y) * (y - center_y);
+                const double theta = std::atan2(y - center_y, x - center_x);
+                int avoid_dir = 0;
+                if(theta <= pi * 1 / 8 || theta > pi * 15 / 8){
+                    avoid_dir = 4;
+                }else{
+                    for(int i = 0; i < 8; ++i){
+                        if(theta <= pi * ((i * 2 + 3) % 16) / 8 || theta > pi * (i * 2 + 1) / 8){
+                            avoid_dir = (i + 5) % 8;
+                            break;
+                        }
+                    }
+                }
+                const double m = ((std::min)(field_width / 2, field_height / 2));
+                position.weight[avoid_dir] += dist >= m ? 1.0 : dist / m;
+            }
+
+            reflection_line.normalize();
+        }
+
         void collision(){
             auto &list_manager_bullet_arrow = bullet_arrow::tasklist();
             bool hit_flag = false;
             double pxs = coord[0] - 3, pys = coord[1] - 3, pxe = coord[0] + 3, pye = coord[1] + 3;
-            #pragma omp parallel for
             for(int actual_parallel_list_count = 0; actual_parallel_list_count < bullet_arrow::tasklist_type::actual_parallel_num; ++actual_parallel_list_count){
                 auto *t = list_manager_bullet_arrow.active[actual_parallel_list_count].next;
                 while(t != &list_manager_bullet_arrow.active[actual_parallel_list_count]){
-                    bool d = t->obj.coord[0] >= coord[0] && t->obj.coord[0] - 1.0 <= coord[0];
-                    d = d || t->obj.coord[0] >= coord[0] - 2.0 && t->obj.coord[0] - 2.0 <= coord[0] + 2.0;
-                    bool e = t->obj.coord[1] >= coord[1] && t->obj.coord[1] - 1.0 <= coord[1];
-                    e = e || t->obj.coord[1] >= coord[1] - 2.0 && t->obj.coord[1] - 2.0 <= coord[1] + 2.0;
-                    if(d && e){
+                    if(
+                        coord[0] - 1.0 <= t->obj.coord[0] &&
+                        coord[0] + 1.0 >= t->obj.coord[0] &&
+                        coord[1] - 1.0 <= t->obj.coord[1] &&
+                        coord[1] + 1.0 >= t->obj.coord[1]
+                    ){
                         t = list_manager_bullet_arrow.delete_task(t);
                         ++hit_count.count;
                         hit_flag = true;
@@ -1359,10 +1508,33 @@ namespace object{
 
         void move(){
             bool k[] = {
-                input_manager.press(keys::left) || input_manager.press(keys::a) || input_manager.pad_press(pad::left) || input_manager.pad_press(pad::n4),
-                input_manager.press(keys::right) || input_manager.press(keys::d) || input_manager.pad_press(pad::right) || input_manager.pad_press(pad::n6),
-                input_manager.press(keys::up) || input_manager.press(keys::w) || input_manager.pad_press(pad::up) || input_manager.pad_press(pad::n8),
-                input_manager.press(keys::down) || input_manager.press(keys::s) || input_manager.pad_press(pad::down) || input_manager.pad_press(pad::n5)
+                !auto_ctrl ?
+                    input_manager.press(keys::left) ||
+                    input_manager.press(keys::a) ||
+                    input_manager.pad_press(pad::left) ||
+                    input_manager.pad_press(pad::n4)
+                    : auto_left,
+
+                !auto_ctrl ?
+                    input_manager.press(keys::right) ||
+                    input_manager.press(keys::d) ||
+                    input_manager.pad_press(pad::right) ||
+                    input_manager.pad_press(pad::n6)
+                    : auto_right,
+
+                !auto_ctrl ?
+                    input_manager.press(keys::up) ||
+                    input_manager.press(keys::w) ||
+                    input_manager.pad_press(pad::up) ||
+                    input_manager.pad_press(pad::n8)
+                    : auto_up,
+
+                !auto_ctrl ?
+                    input_manager.press(keys::down) ||
+                    input_manager.press(keys::s) ||
+                    input_manager.pad_press(pad::down) ||
+                    input_manager.pad_press(pad::n5)
+                    : auto_down
             };
 
             if(!(k[2] || k[3])){
@@ -1588,16 +1760,16 @@ void draw_spectrum(){
     for(int i = 0; i < 256; ++i){
         DrawLine(
             0,
-            (screen_height - 160) / 2 + i,
+            (screen_height - 256) / 2 + i,
             static_cast<int>(object::peek_spectrum[0][i] * screen_width / 2),
-            (screen_height - 160) / 2 + i,
+            (screen_height - 256) / 2 + i,
             GetColor(0xE0, 0xE0, 0xE0)
         );
         DrawLine(
             screen_width - 1,
-            (screen_height - 160) / 2 + i,
+            (screen_height - 256) / 2 + i,
             screen_width - static_cast<int>(object::peek_spectrum[1][i] * screen_width / 2) - 1,
-            (screen_height - 160) / 2 + i,
+            (screen_height - 256) / 2 + i,
             GetColor(0xE0, 0xE0, 0xE0)
         );
     }
