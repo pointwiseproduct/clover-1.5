@@ -1146,6 +1146,9 @@ namespace object{
         // 速度
         coord_type speed;
 
+        // 速度の絶対値
+        float r;
+
         // 角度
         tri_type::angle_t omega;
 
@@ -1156,9 +1159,10 @@ namespace object{
         // 色
         static unsigned int color(){ return GetColor(192, 0, 0); }
 
-        // 角度を設定する
+        // 角度と速度の絶対値を設定する
         void set_omega(){
             omega = tri.atan2(speed[1], speed[0]);
+            r = std::sqrt(speed[0] * speed[0] + speed[1] * speed[1]);
         }
 
         void ctor() override{
@@ -1327,8 +1331,7 @@ namespace object{
         dir_t dir;
 
         // 移動方向
-        // 斜めにも対応できるように
-        int move_dir;
+        std::vector<dir_t> move_dir;
 
         // 自動コントロール
         bool auto_ctrl = false;
@@ -1338,28 +1341,28 @@ namespace object{
             dir = dir_t::down;
             coord[0] = field_width / 2;
             coord[1] = field_height / 2;
-            move_dir = 0;
+            move_dir.reserve(4);
             walk_count = 0;
         }
 
         struct algorithm_member_direction{
             enum class dir{
-                right,
-                lower_right,
-                down,
-                lower_left,
-                left,
-                upper_left,
-                up,
-                upper_right,
-                stop
+                right = 0,
+                lower_right = 1,
+                down = 2,
+                lower_left = 3,
+                left = 4,
+                upper_left = 5,
+                up = 6,
+                upper_right = 7,
+                stop = 8
             };
 
             // 各方向の重み
             double weight[9] = { 0.0 };
 
             // 重みを正規化
-            void normalize(){
+            void normalize(double r = 1.0){
                 double w[9];
                 for(int i = 0; i < 9; ++i){
                     w[i] = weight[i];
@@ -1368,20 +1371,15 @@ namespace object{
                 if(w[0] != 0.0){
                     for(int i = 0; i < 9; ++i){
                         weight[i] /= w[0];
+                        weight[i] *= r;
                     }
                 }
             }
         };
 
         void auto_avoidance(){
-            // 拒否方向
-            algorithm_member_direction veto;
             // 反射方向
-            algorithm_member_direction reflection_line;
-            /// 忘却方向
-            algorithm_member_direction oblivion;
-            // 切り返し方向
-            algorithm_member_direction roundtrip;
+            algorithm_member_direction reflection;
             // 場所取り
             algorithm_member_direction position;
 
@@ -1391,85 +1389,169 @@ namespace object{
             // 数学定数
             const double pi = std::atan(1.0) * 4.0;
             const double d90 = pi / 2;
+            auto normalize_rad = [&](double x){
+                if(x > pi * 2){
+                    return x - static_cast<int>(x / (pi * 2)) * pi * 2;
+                }else if(x < 0){
+                    return pi * 2 - (-x - static_cast<int>(x / (pi * 2)) * pi * 2);
+                }else{
+                    return x;
+                }
+            };
 
             auto &list_manager_bullet_arrow = bullet_arrow::tasklist();
             for(int actual_parallel_list_count = 0; actual_parallel_list_count < bullet_arrow::tasklist_type::actual_parallel_num; ++actual_parallel_list_count){
                 auto *t = list_manager_bullet_arrow.active[actual_parallel_list_count].next;
                 while(t != &list_manager_bullet_arrow.active[actual_parallel_list_count]){
                     // Bullet Arrow座標．
-                    const double bx = t->obj.coord[0], by = t->obj.coord[1];
-                    const double dx = t->obj.speed[0], dy = t->obj.speed[1];
+                    const double coord_x = t->obj.coord[0], coord_y = t->obj.coord[1];
+                    const double speed_x = t->obj.speed[0], speed_y = t->obj.speed[1];
 
-                    // reflection_line
+                    // reflection
                     {
-                        const double thredhold_dist_x = field_width / 2;
-                        const double thredhold_dist_y = field_height / 2;
+                        // 半径閾値
+                        const double thredhold_dist_x = field_width / 4.0;
+                        const double thredhold_dist_y = field_height / 4.0;
+                        const double thredhold_dist_min = (std::min)(thredhold_dist_x, thredhold_dist_y);
+                        const double thredhold_dist_min2 = thredhold_dist_min * thredhold_dist_min;
+
                         if(
-                            x - thredhold_dist_x <= bx && x + thredhold_dist_x >= bx &&
-                            y - thredhold_dist_y <= by && y + thredhold_dist_y >= by
+                            x - thredhold_dist_x <= coord_x && x + thredhold_dist_x >= coord_x &&
+                            y - thredhold_dist_y <= coord_y && y + thredhold_dist_y >= coord_y
                         ){
-                            // 角度
-                            const double theta = std::atan2(by - y, bx - x); // プレイヤーからbullet arrowまでの角度
-                            const double phi = std::atan2(dy, dx); // bullet arrowの進行角度
-                            const double diff_1 = std::abs(theta - phi);
-                            const double diff_2 = theta >= phi ? (2 * pi - phi) - theta : (2 * pi - theta) - phi;
-                            const double diff = (std::min)(diff_1, diff_2);
                             int avoid_dir = 0;
-                            if(diff < d90){
-                                const double psi = d90 - diff;
-                                if(psi <= pi * 1 / 8 || psi > pi * 15 / 8){
-                                    if(psi <= pi * 1 / 8){
-                                        avoid_dir = 6;
+                            double p = 0.0;
+
+                            // 角度
+                            {
+                                const double theta = normalize_rad(std::atan2(coord_y - y, coord_x - x)); // プレイヤーからbullet arrowまでの角度
+                                const double phi = normalize_rad(std::atan2(speed_y, speed_x)); // bullet arrowの進行角度
+                                const double diff_1 = std::abs(theta - phi);
+                                const double diff_2 = theta >= phi ? (2 * pi - phi) - theta : (2 * pi - theta) - phi;
+                                const double diff = (std::min)(diff_1, diff_2);
+                                if(diff < d90){
+                                    const double psi = d90 - diff;
+                                    if(psi <= pi * 1 / 8 || psi > pi * 15 / 8){
+                                        if(psi <= pi * 1 / 8){
+                                            avoid_dir = 6;
+                                        }else{
+                                            avoid_dir = 2;
+                                        }
                                     }else{
-                                        avoid_dir = 2;
-                                    }
-                                }else{
-                                    for(int i = 3; i <= 15; i += 2){
-                                        if(psi <= pi * i / 8 && psi > pi * (i - 2) / 8){
-                                            if(psi >= pi * (i - 1) / 8){
-                                                avoid_dir = (7 + (i - 3) / 2) % 8;
-                                            }else{
-                                                avoid_dir = (3 + (i - 3) / 2) % 8;
+                                        for(int i = 3; i <= 15; i += 2){
+                                            if(psi <= pi * i / 8 && psi > pi * (i - 2) / 8){
+                                                if(psi >= pi * (i - 1) / 8){
+                                                    avoid_dir = (7 + (i - 3) / 2) % 8;
+                                                }else{
+                                                    avoid_dir = (3 + (i - 3) / 2) % 8;
+                                                }
+                                                break;
                                             }
-                                            break;
                                         }
                                     }
+                                    p += 1.0 / (bullet_arrow::tasklist_type::task_num * 2);
                                 }
-                                reflection_line.weight[avoid_dir] += 1.0 / (bullet_arrow::tasklist_type::task_num * 3);
                             }
 
-                            // 速度
-                            ;
-
                             // 距離
-                            ;
+                            {
+                                const double dist2 = (x - coord_x) * (x - coord_x) + (y - coord_y) * (y - coord_y);
+                                const double thredhold = dist2 > thredhold_dist_min2 ? 0.0 : 1.0 - dist2 / thredhold_dist_min2;
+                                p *= thredhold;
+                            }
+
+                            reflection.weight[avoid_dir] += p;
                         }
                     }
+
+                    t = t->next;
                 }
             }
 
             // position
-            {
+            if(x < field_width * 4.0 / 10 || x > field_width * 6.0 / 10 || y < field_height * 4.0 / 10 || y > field_height * 6.0 / 10){
                 const double center_x = field_width / 2;
                 const double center_y = field_height / 2;
                 const double dist = (x - center_x) * (x - center_x) + (y - center_y) * (y - center_y);
-                const double theta = std::atan2(y - center_y, x - center_x);
-                int avoid_dir = 0;
+                const double theta = normalize_rad(std::atan2(y - center_y, x - center_x));
+                algorithm_member_direction::dir avoid_dir;
                 if(theta <= pi * 1 / 8 || theta > pi * 15 / 8){
-                    avoid_dir = 4;
+                    avoid_dir = algorithm_member_direction::dir::right;
                 }else{
                     for(int i = 0; i < 8; ++i){
-                        if(theta <= pi * ((i * 2 + 3) % 16) / 8 || theta > pi * (i * 2 + 1) / 8){
-                            avoid_dir = (i + 5) % 8;
+                        if(theta <= pi * ((i * 2 + 3) % 16) / 8 && theta > pi * (i * 2 + 1) / 8){
+                            avoid_dir = static_cast<algorithm_member_direction::dir>((i + 4) % 8);
                             break;
                         }
                     }
                 }
                 const double m = ((std::min)(field_width / 2, field_height / 2));
-                position.weight[avoid_dir] += dist >= m ? 1.0 : dist / m;
+                position.weight[static_cast<int>(avoid_dir)] += dist >= m ? 1.0 : dist / m;
             }
 
-            reflection_line.normalize();
+            reflection.normalize(1.0);
+            position.normalize(0.9);
+
+            // 議長
+            {
+                std::pair<int, double> final_dir[9] = {
+                    { 0, 0.0 }, { 1, 0.0 }, { 2, 0.0 },
+                    { 3, 0.0 }, { 4, 0.0 }, { 5, 0.0 },
+                    { 6, 0.0 }, { 7, 0.0 }, { 8, 0.0 }
+                };
+                for(int i = 0; i < 9; ++i){
+                    final_dir[i].second += reflection.weight[i];
+                    final_dir[i].second += position.weight[i];
+                }
+                std::sort(final_dir, final_dir + 9, [](const std::pair<int, double> &l, const std::pair<int, double> &r){ return l.second > r.second; });
+                auto_left = false;
+                auto_right = false;
+                auto_up = false;
+                auto_down = false;
+                if(final_dir[0].second > 0){
+                    switch(static_cast<algorithm_member_direction::dir>(final_dir[0].first)){
+                    case algorithm_member_direction::dir::left:
+                        auto_left = true;
+                        break;
+
+                    case algorithm_member_direction::dir::right:
+                        auto_right = true;
+                        break;
+
+                    case algorithm_member_direction::dir::up:
+                        auto_up = true;
+                        break;
+
+                    case algorithm_member_direction::dir::down:
+                        auto_down = true;
+                        break;
+
+                    case algorithm_member_direction::dir::upper_left:
+                        auto_left = true;
+                        auto_up = true;
+                        break;
+
+                    case algorithm_member_direction::dir::lower_left:
+                        auto_left = true;
+                        auto_down = true;
+                        break;
+
+                    case algorithm_member_direction::dir::upper_right:
+                        auto_right = true;
+                        auto_up = true;
+                        break;
+
+                    case algorithm_member_direction::dir::lower_right:
+                        auto_right = true;
+                        auto_down = true;
+                        break;
+
+                    case algorithm_member_direction::dir::stop:
+                    default:
+                        break;
+                    }
+                }
+            }
         }
 
         void collision(){
@@ -1479,22 +1561,27 @@ namespace object{
             for(int actual_parallel_list_count = 0; actual_parallel_list_count < bullet_arrow::tasklist_type::actual_parallel_num; ++actual_parallel_list_count){
                 auto *t = list_manager_bullet_arrow.active[actual_parallel_list_count].next;
                 while(t != &list_manager_bullet_arrow.active[actual_parallel_list_count]){
-                    if(
-                        coord[0] - 1.0 <= t->obj.coord[0] &&
-                        coord[0] + 1.0 >= t->obj.coord[0] &&
-                        coord[1] - 1.0 <= t->obj.coord[1] &&
-                        coord[1] + 1.0 >= t->obj.coord[1]
-                    ){
-                        t = list_manager_bullet_arrow.delete_task(t);
-                        ++hit_count.count;
-                        hit_flag = true;
-                        task<damage_spark> *v[damage_spark::particle_num];
-                        for(int i = 0; i < damage_spark::particle_num; ++i){
-                            v[i] = damage_spark::tasklist().create_task();
-                            if(v[i]){
-                                v[i]->obj.coord[0] = coord[0];
-                                v[i]->obj.coord[1] = coord[1];
-                                v[i]->obj.color = damage_spark::default_color();
+                    int r = static_cast<int>(t->obj.r);
+                    for(int d = 0; d < r; ++d){
+                        float diff_x = t->obj.speed[0] * d / t->obj.r;
+                        float diff_y = t->obj.speed[1] * d / t->obj.r;
+                        if(
+                            coord[0] - 1.0 <= t->obj.coord[0] + diff_x &&
+                            coord[0] + 1.0 >= t->obj.coord[0] + diff_x &&
+                            coord[1] - 1.0 <= t->obj.coord[1] + diff_y &&
+                            coord[1] + 1.0 >= t->obj.coord[1] + diff_y
+                        ){
+                            t = list_manager_bullet_arrow.delete_task(t);
+                            ++hit_count.count;
+                            hit_flag = true;
+                            task<damage_spark> *v[damage_spark::particle_num];
+                            for(int i = 0; i < damage_spark::particle_num; ++i){
+                                v[i] = damage_spark::tasklist().create_task();
+                                if(v[i]){
+                                    v[i]->obj.coord[0] = coord[0];
+                                    v[i]->obj.coord[1] = coord[1];
+                                    v[i]->obj.color = damage_spark::default_color();
+                                }
                             }
                         }
                     }
@@ -1507,6 +1594,10 @@ namespace object{
         }
 
         void move(){
+            if(input_manager.push(keys::l)){
+                auto_ctrl = !auto_ctrl;
+            }
+
             bool k[] = {
                 !auto_ctrl ?
                     input_manager.press(keys::left) ||
@@ -1537,68 +1628,70 @@ namespace object{
                     : auto_down
             };
 
-            if(!(k[2] || k[3])){
-                if(k[0]){
-                    dir = dir_t::left;
-                }else if(k[1]){
-                    dir = dir_t::right;
+            if(k[0] && std::find(move_dir.begin(), move_dir.end(), dir_t::right) == move_dir.end()){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::left) == move_dir.end()){
+                    move_dir.push_back(dir_t::left);
                 }
-            }
-
-            if(!(k[0] || k[1])){
-                if(k[2]){
-                    dir = dir_t::up;
-                }else if(k[3]){
-                    dir = dir_t::down;
-                }
-            }
-
-            if(k[0] && k[1]){
-                // empty
             }else{
-                if(k[0]){
-                    move_dir |= 0b0001;
-                }else if(!k[0]){
-                    move_dir &= 0b1110;
-                }
-                if(k[1]){
-                    move_dir |= 0b0010;
-                }else if(!k[1]){
-                    move_dir &= 0b1101;
+                auto iter = std::find(move_dir.begin(), move_dir.end(), dir_t::left);
+                if(iter != move_dir.end()){
+                    move_dir.erase(iter);
                 }
             }
 
-            if(k[2] && k[3]){
-                // empty
+            if(k[1] && std::find(move_dir.begin(), move_dir.end(), dir_t::left) == move_dir.end()){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::right) == move_dir.end()){
+                    move_dir.push_back(dir_t::right);
+                }
             }else{
-                if(k[2]){
-                    move_dir |= 0b0100;
-                }else if(!k[2]){
-                    move_dir &= 0b1011;
+                auto iter = std::find(move_dir.begin(), move_dir.end(), dir_t::right);
+                if(iter != move_dir.end()){
+                    move_dir.erase(iter);
                 }
-                if(k[3]){
-                    move_dir |= 0b1000;
-                }else if(!k[3]){
-                    move_dir &= 0b0111;
+            }
+
+            if(k[2] && std::find(move_dir.begin(), move_dir.end(), dir_t::up) == move_dir.end()){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::down) == move_dir.end()){
+                    move_dir.push_back(dir_t::up);
                 }
+            }else{
+                auto iter = std::find(move_dir.begin(), move_dir.end(), dir_t::up);
+                if(iter != move_dir.end()){
+                    move_dir.erase(iter);
+                }
+            }
+
+            if(k[3] && std::find(move_dir.begin(), move_dir.end(), dir_t::down) == move_dir.end()){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::up) == move_dir.end()){
+                    move_dir.push_back(dir_t::down);
+                }
+            }else{
+                auto iter = std::find(move_dir.begin(), move_dir.end(), dir_t::down);
+                if(iter != move_dir.end()){
+                    move_dir.erase(iter);
+                }
+            }
+
+            if(move_dir.size()){
+                dir = move_dir[0];
             }
 
             static const float speed = 1.25;
             coord_type s;
             s[0] = 0.0, s[1] = 0.0;
             bool x = false, y = false;
-            if((move_dir & 0b0001) > 0){
+            if(std::find(move_dir.begin(), move_dir.end(), dir_t::left) != move_dir.end()){
                 s[0] = -speed;
                 x = true;
-            }else if((move_dir & 0b0010) > 0){
+            }else if(std::find(move_dir.begin(), move_dir.end(), dir_t::right) != move_dir.end()){
                 s[0] = +speed;
                 x = true;
             }
 
-            if((move_dir & 0b0100) > 0){
+            if(std::find(move_dir.begin(), move_dir.end(), dir_t::up) != move_dir.end()){
                 s[1] = -speed;
                 y = true;
-            }else if((move_dir & 0b1000) > 0){
+            }else if(std::find(move_dir.begin(), move_dir.end(), dir_t::down) != move_dir.end()){
                 s[1] = +speed;
                 y = true;
             }
@@ -1636,13 +1729,16 @@ namespace object{
         }
 
         void update(){
+            if(auto_ctrl){
+                auto_avoidance();
+            }
             collision();
             move();
         }
 
         void draw(){
             pattern_surface_type *ptr;
-            if(move_dir == 0){
+            if(move_dir.empty()){
                 switch(dir){
                 case dir_t::left:
                     ptr = pattern::player_left[0].get();
