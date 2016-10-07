@@ -186,10 +186,12 @@ void play_sound(){
 
         std::memset(out, 0, frameCount * data->channels() * sizeof(sample_t));
         int samplesRead = data->read(frameCount * data->channels(), out);
-        progress_per_samples += frameCount;
-
         int channels = data->channels();
         int len = data->numSamples() / channels;
+        progress_per_samples += frameCount;
+        if(progress_per_samples > len){
+            progress_per_samples = len;
+        }
         progress = static_cast<float>(progress_per_samples) / static_cast<float>(len);
 
         int n = static_cast<int>(sizeof(fft_input_signal) / sizeof(fft_input_signal[0]));

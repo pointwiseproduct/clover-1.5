@@ -59,14 +59,14 @@ template<typename tty_arithmetic_type_ = float> struct alib{
 
     template<unsigned int N, typename Alloc = std::allocator<arithmetic_type> > class trigonometric_function_TmpRec{
     private:
-	    template<unsigned int N_> struct endholder_0{ typedef trigonometric_function<N_, Alloc> end; };
-	    template<typename Alloc_> struct endholder_1{ typedef trigonometric_function<N, Alloc_> end; };
+        template<unsigned int N_> struct endholder_0{ typedef trigonometric_function<N_, Alloc> end; };
+        template<typename Alloc_> struct endholder_1{ typedef trigonometric_function<N, Alloc_> end; };
 
     public:
-	    template<unsigned int N_>
-	    struct precision_0 : public endholder_0<N_>, trigonometric_function_TmpRec<N_, Alloc>{};
-	    template<typename Alloc_>
-	    struct precision_1 : public endholder_1<Alloc_>, trigonometric_function_TmpRec<N, Alloc_>{};
+        template<unsigned int N_>
+        struct precision_0 : public endholder_0<N_>, trigonometric_function_TmpRec<N_, Alloc>{};
+        template<typename Alloc_>
+        struct precision_1 : public endholder_1<Alloc_>, trigonometric_function_TmpRec<N, Alloc_>{};
     };
 
     template<unsigned int N, typename Alloc>
@@ -74,107 +74,107 @@ template<typename tty_arithmetic_type_ = float> struct alib{
     #define TTY_PI_ static_cast<arithmetic_type>(3.1415926535897932384626433832795)
     #define TTY_PI2_ static_cast<arithmetic_type>(6.283185307179586476925286766559)
     public:
-	    typedef Alloc allocator_type;
-	    typedef int angle_t;
-	    enum{
-		    pi2 = 1 << N,		//一周
-		    pi = pi2 / 2,		//半周
-		    mask = pi2 - 1
-	    };
+        typedef Alloc allocator_type;
+        typedef int angle_t;
+        enum{
+            pi2 = 1 << N,        //一周
+            pi = pi2 / 2,        //半周
+            mask = pi2 - 1
+        };
 
     private:
-	    typedef trigonometric_function<N> this_t;
+        typedef trigonometric_function<N> this_t;
         arithmetic_type *sin_tan_;
-	    arithmetic_type *sin_, *tan_;
-	    angle_t *atan_;
+        arithmetic_type *sin_, *tan_;
+        angle_t *atan_;
 
     public:
-	    trigonometric_function() :
+        trigonometric_function() :
             sin_tan_(new arithmetic_type[pi2 * 2 + pi / 4]),
-		    sin_	(sin_tan_),
-		    tan_	(sin_tan_ + pi2),
-		    atan_	(new angle_t[pi2 * 2])
-	    {
-		    //テーブルを作成
-		    const arithmetic_type
-			    acc = TTY_PI2_ / static_cast<arithmetic_type>(pi2),	// sin tan の加速度
-			    omega = static_cast<arithmetic_type>(1) / static_cast<arithmetic_type>(pi / 4),	// atan の加速度
-			    q = TTY_PI_ / static_cast<arithmetic_type>(4);			// 180 / 4
+            sin_    (sin_tan_),
+            tan_    (sin_tan_ + pi2),
+            atan_    (new angle_t[pi2 * 2])
+        {
+            //テーブルを作成
+            const arithmetic_type
+                acc = TTY_PI2_ / static_cast<arithmetic_type>(pi2),    // sin tan の加速度
+                omega = static_cast<arithmetic_type>(1) / static_cast<arithmetic_type>(pi / 4),    // atan の加速度
+                q = TTY_PI_ / static_cast<arithmetic_type>(4);            // 180 / 4
 
-		    arithmetic_type t = static_cast<arithmetic_type>(0);
-		    for(angle_t i = 0; i < pi2; t += acc, i++){
-			    sin_[i] = ::sin(t);
-			    tan_[i] = ::tan(t);
-		    }
+            arithmetic_type t = static_cast<arithmetic_type>(0);
+            for(angle_t i = 0; i < pi2; t += acc, i++){
+                sin_[i] = ::sin(t);
+                tan_[i] = ::tan(t);
+            }
 
-		    t = 0;
-		    for(angle_t i = 0; i < (pi / 4); t += omega, i++){
-			    atan_[i] = static_cast<angle_t>(static_cast<arithmetic_type>(pi / 4) * ::atan(t) / q);
-		    }
-	    }
+            t = 0;
+            for(angle_t i = 0; i < (pi / 4); t += omega, i++){
+                atan_[i] = static_cast<angle_t>(static_cast<arithmetic_type>(pi / 4) * ::atan(t) / q);
+            }
+        }
 
-	    ~trigonometric_function(){
-		    delete[] sin_tan_;
+        ~trigonometric_function(){
+            delete[] sin_tan_;
             delete[] atan_;
-	    }
+        }
 
-	    const arithmetic_type &sin(const angle_t &a)const{ return sin_[a & mask]; }
-	    const arithmetic_type &cos(const angle_t &a)const{ return sin_[(a + pi / 2) & mask]; }
-	    const arithmetic_type &tan(const angle_t &a)const{ return tan_[a & mask]; }
+        const arithmetic_type &sin(const angle_t &a)const{ return sin_[a & mask]; }
+        const arithmetic_type &cos(const angle_t &a)const{ return sin_[(a + pi / 2) & mask]; }
+        const arithmetic_type &tan(const angle_t &a)const{ return tan_[a & mask]; }
 
     public:
-	    angle_t atan2(const arithmetic_type &y, const arithmetic_type &x) const{
+        angle_t atan2(const arithmetic_type &y, const arithmetic_type &x) const{
 #if 1
-		    //どう頑張っても組み込みatan2の方が速いと思う場合
-		    angle_t a = static_cast<angle_t>(::atan2(y, x) * static_cast<arithmetic_type>(pi) / TTY_PI_);
-		    if(a < 0){ return pi2 + a; }else{ return a; }
+            //どう頑張っても組み込みatan2の方が速いと思う場合
+            angle_t a = static_cast<angle_t>(::atan2(y, x) * static_cast<arithmetic_type>(pi) / TTY_PI_);
+            if(a < 0){ return pi2 + a; }else{ return a; }
 #else
 #define absolute_(a) (a < 0 ? -a : a)
-		    angle_t s = 0;
-		    arithmetic_type ax, ay;
-		    if(x < 0){
-			    ax = -x;
-			    s += 1;
-		    }else{ ax = x; }
-		    if(y < 0){
-			    ay = -y;
-			    s += 2;
-		    }else{ ay = y; }
-		    angle_t i;
-		    bool f;
-		    if(ax > ay){
-			    i = static_cast<angle_t>(static_cast<angle_t>(pi / 4) * ay / ax);
-			    f = (s == 0 || s == 3) ? 1 : 0;
-		    }else if(ay > ax){
-			    i = static_cast<angle_t>(static_cast<arithmetic_type>(pi / 4) * ax / ay);
-			    f = (s == 0 || s == 3) ? 0 : 1;
-		    }else{//ax == ay
-			    static const angle_t t[4] = {
-				    pi / 4,
-				    pi / 4 * 3,
-				    pi / 4 * 7,
-				    pi / 4 * 5,
-			    };
-			    return t[s];
-		    }
-		    static const angle_t t_[4] = {
-			    0,
-			    pi / 2,
-			    pi / 2 * 3,
-			    pi / 2 * 2,
-		    };
-		    if(f){
-			    return atan_[i] + t_[s];
-		    }else{
-			    return atan_[(pi / 4) - 1] + t_[s] + (pi / 4);
-		    }
+            angle_t s = 0;
+            arithmetic_type ax, ay;
+            if(x < 0){
+                ax = -x;
+                s += 1;
+            }else{ ax = x; }
+            if(y < 0){
+                ay = -y;
+                s += 2;
+            }else{ ay = y; }
+            angle_t i;
+            bool f;
+            if(ax > ay){
+                i = static_cast<angle_t>(static_cast<angle_t>(pi / 4) * ay / ax);
+                f = (s == 0 || s == 3) ? 1 : 0;
+            }else if(ay > ax){
+                i = static_cast<angle_t>(static_cast<arithmetic_type>(pi / 4) * ax / ay);
+                f = (s == 0 || s == 3) ? 0 : 1;
+            }else{//ax == ay
+                static const angle_t t[4] = {
+                    pi / 4,
+                    pi / 4 * 3,
+                    pi / 4 * 7,
+                    pi / 4 * 5,
+                };
+                return t[s];
+            }
+            static const angle_t t_[4] = {
+                0,
+                pi / 2,
+                pi / 2 * 3,
+                pi / 2 * 2,
+            };
+            if(f){
+                return atan_[i] + t_[s];
+            }else{
+                return atan_[(pi / 4) - 1] + t_[s] + (pi / 4);
+            }
 #undef absolute_
 #endif
-	    }
+        }
 
-	    angle_t atan2_cross(const arithmetic_type &x, const arithmetic_type &y) const{
-		    return atan2(y, x);
-	    }
+        angle_t atan2_cross(const arithmetic_type &x, const arithmetic_type &y) const{
+            return atan2(y, x);
+        }
 
 #undef TTY_PI_
 #undef TTY_PI2_
@@ -243,6 +243,10 @@ private:
     int frame_count = 0;
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 };
+
+// シーン遷移
+void transition_title();
+void transition_game_main();
 
 //-------- キー定数
 enum class keys : int{
@@ -434,7 +438,6 @@ public:
         mouse_state = GetMouseInput();
         int pad_state_ = GetJoypadInputState(DX_INPUT_KEY_PAD1);
         prev_pad_state = pad_state;
-        pad_state.clear();
         pad_state[pad::left] = (pad_state_ & static_cast<int>(pad::left)) != 0;
         pad_state[pad::right] = (pad_state_ & static_cast<int>(pad::right)) != 0;
         pad_state[pad::up] = (pad_state_ & static_cast<int>(pad::up)) != 0;
@@ -477,6 +480,50 @@ public:
 
     bool release(keys n) const{
         return key_buffer[static_cast<int>(n)] != 1 && prev_flag[static_cast<int>(n)];
+    }
+
+    bool press_any_key() const{
+        for(int i = 0; i < 0x100; ++i){
+            if(key_buffer[i] == 1){
+                return true;
+            }
+        }
+        for(auto iter = pad_state.begin(); iter != pad_state.end(); ++iter){
+            if(iter->second){
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool push_any_key() const{
+        for(int i = 0; i < 0x100; ++i){
+            if(!prev_flag[i] && key_buffer[i] == 1){
+                return true;
+            }
+        }
+        auto jter = prev_pad_state.begin();
+        for(auto iter = pad_state.begin(); iter != pad_state.end(); ++iter, ++jter){
+            if(!jter->second && iter->second){
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool release_any_key() const{
+        for(int i = 0; i < 0x100; ++i){
+            if(prev_flag[i] && key_buffer[i] != 1){
+                return true;
+            }
+        }
+        auto jter = prev_pad_state.begin();
+        for(auto iter = pad_state.begin(); iter != pad_state.end(); ++iter, ++jter){
+            if(jter->second && !iter->second){
+                return true;
+            }
+        }
+        return false;
     }
 
     bool mouse_press(mouse_button n) const{
@@ -544,6 +591,8 @@ namespace pattern{
     std::unique_ptr<pattern_surface_type> title;
     std::unique_ptr<pattern_surface_type> hit_count;
     std::unique_ptr<pattern_surface_type> emitted;
+    std::unique_ptr<pattern_surface_type> otsukaresama;
+    std::unique_ptr<pattern_surface_type> auto_play;
     std::unique_ptr<pattern_surface_type> volume;
     std::array<std::unique_ptr<pattern_surface_type>, 3> player_left, player_right, player_up, player_down;
     std::array<std::unique_ptr<pattern_surface_type>, 10> num;
@@ -553,6 +602,8 @@ namespace pattern{
         title.reset(new pattern_surface_type("d/title.bmp"));
         hit_count.reset(new pattern_surface_type("d/hit_count.bmp"));
         emitted.reset(new pattern_surface_type("d/emitted.bmp"));
+        otsukaresama.reset(new pattern_surface_type("d/otsukaresama.bmp"));
+        auto_play.reset(new pattern_surface_type("d/auto_play.bmp"));
         volume.reset(new pattern_surface_type("d/volume.bmp"));
         for(int i = 0; i < 3; ++i){
             player_left[i].reset(new pattern_surface_type(("d/player_left_" + std::to_string(i) + ".bmp").c_str()));
@@ -1114,8 +1165,8 @@ namespace object{
 
         for(int i = 0; i < bullet_buffer.size(); ++i){
             for(int j = 0; j < bullet_buffer.size(); ++j){
-                int x = offset_x + static_cast<int>(c[0]) - bullet_buffer.size() / 2 + i;
-                int y = offset_y + static_cast<int>(c[1]) - bullet_buffer.size() / 2 + j;
+                int x = offset_x + static_cast<int>(c[0]) - static_cast<int>(bullet_buffer.size()) / 2 + i;
+                int y = offset_y + static_cast<int>(c[1]) - static_cast<int>(bullet_buffer.size()) / 2 + j;
                 if(bullet_buffer[j][i]){
                     DrawPixel(x, y, color);
                 }else if(
@@ -1324,6 +1375,9 @@ namespace object{
         // 座標
         coord_type coord;
 
+        const float speed = 1.25f;
+        const float sqrt = 1.0f / std::sqrt(2.0f);
+
         // プレイヤーの向いている方向
         enum class dir_t{
             up, down, left, right
@@ -1348,14 +1402,14 @@ namespace object{
         struct algorithm_member_direction{
             enum class dir{
                 right = 0,
-                lower_right = 1,
-                down = 2,
-                lower_left = 3,
-                left = 4,
-                upper_left = 5,
-                up = 6,
-                upper_right = 7,
-                stop = 8
+                lower_right,
+                down,
+                lower_left,
+                left,
+                upper_left,
+                up,
+                upper_right,
+                stop
             };
 
             // 各方向の重み
@@ -1382,9 +1436,36 @@ namespace object{
             algorithm_member_direction reflection;
             // 場所取り
             algorithm_member_direction position;
+            // 拒否方向
+            algorithm_member_direction veto;
+            int veto_count = 0;
 
             // Player座標
             const double x = coord[0], y = coord[1];
+
+            // 最も近いbullet arrowとの距離
+            const double nearest_bullet_arrow_dist_thredhold = field_width;
+            double nearest_bullet_arrow_dist = nearest_bullet_arrow_dist_thredhold;
+
+            // 壁に触れている場合は先にvetoに入れておく
+            if(x == 0){
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::left)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::upper_left)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::lower_left)] = 1;
+            }else if(x == field_width - 1){
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::right)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::upper_right)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::lower_right)] = 1;
+            }
+            if(y == 0){
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::up)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::upper_left)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::upper_right)] = 1;
+            }else if(y == field_height - 1){
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::down)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::lower_left)] = 1;
+                veto.weight[static_cast<int>(algorithm_member_direction::dir::lower_right)] = 1;
+            }
 
             // 数学定数
             const double pi = std::atan(1.0) * 4.0;
@@ -1433,17 +1514,17 @@ namespace object{
                                     const double psi = d90 - diff;
                                     if(psi <= pi * 1 / 8 || psi > pi * 15 / 8){
                                         if(psi <= pi * 1 / 8){
-                                            avoid_dir = 6;
+                                            avoid_dir = 8;
                                         }else{
-                                            avoid_dir = 2;
+                                            avoid_dir = 4;
                                         }
                                     }else{
                                         for(int i = 3; i <= 15; i += 2){
                                             if(psi <= pi * i / 8 && psi > pi * (i - 2) / 8){
                                                 if(psi >= pi * (i - 1) / 8){
-                                                    avoid_dir = (7 + (i - 3) / 2) % 8;
+                                                    avoid_dir = (8 - (i - 3) / 2) % 8;
                                                 }else{
-                                                    avoid_dir = (3 + (i - 3) / 2) % 8;
+                                                    avoid_dir = (4 - (i - 3) / 2) % 8;
                                                 }
                                                 break;
                                             }
@@ -1461,6 +1542,32 @@ namespace object{
                             }
 
                             reflection.weight[avoid_dir] += p;
+
+                            nearest_bullet_arrow_dist = (std::min)(std::sqrt((x - coord_x) * (x - coord_x) + (y - coord_y) * (y - coord_y)), nearest_bullet_arrow_dist);
+                        }
+                    }
+
+                    // 拒否方向
+                    {
+                        static const coord_type arr[9] = {
+                            { speed, 0.0f },
+                            { speed * 1.0f / sqrt, speed * 1.0f / sqrt },
+                            { 0.0f, speed },
+                            { -speed * 1.0f / sqrt, speed * 1.0f / sqrt },
+                            { -speed, 0.0f },
+                            { -speed * 1.0f / sqrt, -speed * 1.0f / sqrt },
+                            { 0.0f, -speed },
+                            { speed * 1.0f / sqrt, -speed * 1.0f / sqrt },
+                            { 0.0f, 0.0f }
+                        };
+                        for(int i = 0; i < 9; ++i){
+                            if(collision_test(t, static_cast<float>(x) + arr[i][0], static_cast<float>(y) + arr[i][1])){
+                                if(veto.weight[i] == 0){
+                                    veto.weight[i] = 1;
+                                    ++veto_count;
+                                }
+                                break;
+                            }
                         }
                     }
 
@@ -1469,14 +1576,20 @@ namespace object{
             }
 
             // position
-            if(x < field_width * 4.0 / 10 || x > field_width * 6.0 / 10 || y < field_height * 4.0 / 10 || y > field_height * 6.0 / 10){
+            const double positioning_thredhold = 10;
+            if(
+                x < field_width / 2 - speed * positioning_thredhold ||
+                x > field_width / 2 + speed * positioning_thredhold ||
+                y < field_height / 2 - speed * positioning_thredhold ||
+                y > field_height / 2 + speed * positioning_thredhold
+            ){
                 const double center_x = field_width / 2;
                 const double center_y = field_height / 2;
-                const double dist = (x - center_x) * (x - center_x) + (y - center_y) * (y - center_y);
+                const double dist = std::pow((x - center_x) * (x - center_x) + (y - center_y) * (y - center_y), 0.25) / (field_width / 2);
                 const double theta = normalize_rad(std::atan2(y - center_y, x - center_x));
                 algorithm_member_direction::dir avoid_dir;
                 if(theta <= pi * 1 / 8 || theta > pi * 15 / 8){
-                    avoid_dir = algorithm_member_direction::dir::right;
+                    avoid_dir = algorithm_member_direction::dir::left;
                 }else{
                     for(int i = 0; i < 8; ++i){
                         if(theta <= pi * ((i * 2 + 3) % 16) / 8 && theta > pi * (i * 2 + 1) / 8){
@@ -1485,14 +1598,13 @@ namespace object{
                         }
                     }
                 }
-                const double m = ((std::min)(field_width / 2, field_height / 2));
-                position.weight[static_cast<int>(avoid_dir)] += dist >= m ? 1.0 : dist / m;
+                position.weight[static_cast<int>(avoid_dir)] += dist * nearest_bullet_arrow_dist;
             }
 
             reflection.normalize(1.0);
             position.normalize(0.9);
 
-            // 議長
+            // 最終決定
             {
                 std::pair<int, double> final_dir[9] = {
                     { 0, 0.0 }, { 1, 0.0 }, { 2, 0.0 },
@@ -1502,6 +1614,9 @@ namespace object{
                 for(int i = 0; i < 9; ++i){
                     final_dir[i].second += reflection.weight[i];
                     final_dir[i].second += position.weight[i];
+                    if(veto_count < 9 && veto.weight[i] == 1){
+                        final_dir[i].second = 0;
+                    }
                 }
                 std::sort(final_dir, final_dir + 9, [](const std::pair<int, double> &l, const std::pair<int, double> &r){ return l.second > r.second; });
                 auto_left = false;
@@ -1547,11 +1662,29 @@ namespace object{
                         break;
 
                     case algorithm_member_direction::dir::stop:
-                    default:
                         break;
                     }
+                }else if(veto_count < 9){
+                    ;
                 }
             }
+        }
+
+        bool collision_test(const task<bullet_arrow> *t, float x, float y) const{
+            int r = static_cast<int>(t->obj.r);
+            for(int d = 0; d < r; ++d){
+                float diff_x = t->obj.speed[0] * d / t->obj.r;
+                float diff_y = t->obj.speed[1] * d / t->obj.r;
+                if(
+                    x - 1.0 <= t->obj.coord[0] + diff_x &&
+                    x + 1.0 >= t->obj.coord[0] + diff_x &&
+                    y - 1.0 <= t->obj.coord[1] + diff_y &&
+                    y + 1.0 >= t->obj.coord[1] + diff_y
+                ){
+                    return true;
+                }
+            }
+            return false;
         }
 
         void collision(){
@@ -1561,27 +1694,17 @@ namespace object{
             for(int actual_parallel_list_count = 0; actual_parallel_list_count < bullet_arrow::tasklist_type::actual_parallel_num; ++actual_parallel_list_count){
                 auto *t = list_manager_bullet_arrow.active[actual_parallel_list_count].next;
                 while(t != &list_manager_bullet_arrow.active[actual_parallel_list_count]){
-                    int r = static_cast<int>(t->obj.r);
-                    for(int d = 0; d < r; ++d){
-                        float diff_x = t->obj.speed[0] * d / t->obj.r;
-                        float diff_y = t->obj.speed[1] * d / t->obj.r;
-                        if(
-                            coord[0] - 1.0 <= t->obj.coord[0] + diff_x &&
-                            coord[0] + 1.0 >= t->obj.coord[0] + diff_x &&
-                            coord[1] - 1.0 <= t->obj.coord[1] + diff_y &&
-                            coord[1] + 1.0 >= t->obj.coord[1] + diff_y
-                        ){
-                            t = list_manager_bullet_arrow.delete_task(t);
-                            ++hit_count.count;
-                            hit_flag = true;
-                            task<damage_spark> *v[damage_spark::particle_num];
-                            for(int i = 0; i < damage_spark::particle_num; ++i){
-                                v[i] = damage_spark::tasklist().create_task();
-                                if(v[i]){
-                                    v[i]->obj.coord[0] = coord[0];
-                                    v[i]->obj.coord[1] = coord[1];
-                                    v[i]->obj.color = damage_spark::default_color();
-                                }
+                    if(collision_test(t, coord[0], coord[1])){
+                        t = list_manager_bullet_arrow.delete_task(t);
+                        ++hit_count.count;
+                        hit_flag = true;
+                        task<damage_spark> *v[damage_spark::particle_num];
+                        for(int i = 0; i < damage_spark::particle_num; ++i){
+                            v[i] = damage_spark::tasklist().create_task();
+                            if(v[i]){
+                                v[i]->obj.coord[0] = coord[0];
+                                v[i]->obj.coord[1] = coord[1];
+                                v[i]->obj.color = damage_spark::default_color();
                             }
                         }
                     }
@@ -1628,8 +1751,8 @@ namespace object{
                     : auto_down
             };
 
-            if(k[0] && std::find(move_dir.begin(), move_dir.end(), dir_t::right) == move_dir.end()){
-                if(std::find(move_dir.begin(), move_dir.end(), dir_t::left) == move_dir.end()){
+            if(k[0]){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::right) == move_dir.end() && std::find(move_dir.begin(), move_dir.end(), dir_t::left) == move_dir.end()){
                     move_dir.push_back(dir_t::left);
                 }
             }else{
@@ -1639,8 +1762,8 @@ namespace object{
                 }
             }
 
-            if(k[1] && std::find(move_dir.begin(), move_dir.end(), dir_t::left) == move_dir.end()){
-                if(std::find(move_dir.begin(), move_dir.end(), dir_t::right) == move_dir.end()){
+            if(k[1]){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::left) == move_dir.end() && std::find(move_dir.begin(), move_dir.end(), dir_t::right) == move_dir.end()){
                     move_dir.push_back(dir_t::right);
                 }
             }else{
@@ -1650,8 +1773,8 @@ namespace object{
                 }
             }
 
-            if(k[2] && std::find(move_dir.begin(), move_dir.end(), dir_t::up) == move_dir.end()){
-                if(std::find(move_dir.begin(), move_dir.end(), dir_t::down) == move_dir.end()){
+            if(k[2]){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::up) == move_dir.end() && std::find(move_dir.begin(), move_dir.end(), dir_t::down) == move_dir.end()){
                     move_dir.push_back(dir_t::up);
                 }
             }else{
@@ -1661,8 +1784,8 @@ namespace object{
                 }
             }
 
-            if(k[3] && std::find(move_dir.begin(), move_dir.end(), dir_t::down) == move_dir.end()){
-                if(std::find(move_dir.begin(), move_dir.end(), dir_t::up) == move_dir.end()){
+            if(k[3]){
+                if(std::find(move_dir.begin(), move_dir.end(), dir_t::down) == move_dir.end() && std::find(move_dir.begin(), move_dir.end(), dir_t::up) == move_dir.end()){
                     move_dir.push_back(dir_t::down);
                 }
             }else{
@@ -1676,7 +1799,6 @@ namespace object{
                 dir = move_dir[0];
             }
 
-            static const float speed = 1.25;
             coord_type s;
             s[0] = 0.0, s[1] = 0.0;
             bool x = false, y = false;
@@ -1706,7 +1828,6 @@ namespace object{
             }
 
             if(x && y){
-                static const float sqrt = 1.0 / std::sqrt(2.0);
                 s[0] *= sqrt;
                 s[1] *= sqrt;
             }
@@ -1779,6 +1900,67 @@ namespace object{
         }
     } player;
 
+    // ゲーム中のステータスを監視する
+    struct game_status_manager_type{
+        // otsukaresama テロップの描画カウント
+        int otsukaresama_count;
+        static const int otsukaresama_count_thredhold = 120;
+        static const int otsukaresama_count_max = otsukaresama_count_thredhold * 2;
+        static const int otsukaresama_count_amplitude = 8;
+
+        void ctor(){
+            otsukaresama_count = 0;
+        }
+
+        void update(){
+            // otsukaresama テロップ
+            float p = progress.load();
+            if(p >= 1.0 && bullet_arrow::tasklist().size() == 0 && sub_bullet_arrow::tasklist().size() == 0){
+                ++otsukaresama_count;
+                if(otsukaresama_count > otsukaresama_count_max){
+                    otsukaresama_count = 0;
+                }
+                if(input_manager.push_any_key()){
+                    transition_title();
+                }
+            }
+        }
+
+        void draw(){
+            // otsukaresama テロップ
+            float p = progress.load();
+            if(p >= 1.0 && bullet_arrow::tasklist().size() == 0 && sub_bullet_arrow::tasklist().size() == 0){
+                int amplitude;
+                if(otsukaresama_count >= 0 && otsukaresama_count < otsukaresama_count_thredhold){
+                    int n = otsukaresama_count;
+                    double x = (otsukaresama_count_thredhold - n) / static_cast<double>(otsukaresama_count_thredhold);
+                    amplitude = static_cast<int>(std::pow(x, 2) * otsukaresama_count_amplitude);
+                }else{
+                    int n = otsukaresama_count - otsukaresama_count_thredhold;
+                    double x = (otsukaresama_count_thredhold - n) / static_cast<double>(otsukaresama_count_thredhold);
+                    amplitude = otsukaresama_count_amplitude - static_cast<int>(std::pow(x, 2) * otsukaresama_count_amplitude);
+                }
+                DrawGraph(
+                    (window_width - pattern::otsukaresama->width()) / 2,
+                    (window_height - pattern::otsukaresama->height()) / 2 + amplitude,
+                    pattern::otsukaresama->get(),
+                    TRUE
+                );
+            }
+
+            // auto play テロップ
+            if(player.auto_ctrl){
+                DrawGraph(
+                    (window_width - pattern::auto_play->width()) / 2,
+                    (window_height - pattern::auto_play->height()) / 2 + pattern::player_down[0]->height() + 4,
+                    pattern::auto_play->get(),
+                    TRUE
+                );
+            }
+        }
+
+    } game_status_manager;
+
     // ピークスペクトラム
     extern volatile float peek_spectrum[2][256];
     volatile float peek_spectrum[2][256] = { 0.0 };
@@ -1820,7 +2002,7 @@ namespace object{
                         t->obj.coord[0] = origin[0];
                         t->obj.coord[1] = origin[1];
 
-                        float p = std::pow(std::log(v), 1.25) * 1.25;
+                        float p = std::pow(std::log(v), 1.25f) * 1.25f;
                         t->obj.speed[0] = (i == 0 ? +1 : -1) * tri.cos(spectrum_count) * sub_bullet_arrow::speed_coe() * p;
                         t->obj.speed[1] = (i == 0 ? +1 : -1) * tri.sin(spectrum_count) * sub_bullet_arrow::speed_coe() * p;
 
@@ -1952,7 +2134,7 @@ public:
             if(x > x_end - x_start){
                 x = x_end - x_start;
             }
-            music_volume = static_cast<double>(x) / (x_end - x_start);
+            music_volume = static_cast<float>(x) / (x_end - x_start);
         }
     }
 };
@@ -2041,12 +2223,18 @@ namespace scene{
             object::hit_count.ctor();
             object::emitted_count.ctor();
             object::player.ctor();
+            object::game_status_manager.ctor();
         }
 
         bool update() override{
             input_manager();
-            if(input_manager.push(keys::escape) || ProcessMessage() == -1){
+            if(ProcessMessage() == -1){
                 return false;
+            }
+
+            if(input_manager.push(keys::escape)){
+                transition_title();
+                return true;
             }
 
             //-------- proc
@@ -2056,6 +2244,7 @@ namespace scene{
             object::bullet_arrow::tasklist().update();
             object::spark::tasklist().update();
             object::damage_spark::tasklist().update();
+            object::game_status_manager.update();
 
             object::update_spectrum_cache(object::player.coord);
 
@@ -2077,6 +2266,7 @@ namespace scene{
             object::bullet_arrow::tasklist().draw();
             object::spark::tasklist().draw();
             object::damage_spark::tasklist().draw();
+            object::game_status_manager.draw();
 
             // FPSの表示
             //{
@@ -2098,6 +2288,18 @@ namespace scene{
     };
 }
 
+void transition_title(){
+    clover_system::action_queue.push_back([](){
+        clover_system::current_loop.reset(new scene::title());
+    });
+}
+
+void transition_game_main(){
+    clover_system::action_queue.push_back([](){
+        clover_system::current_loop.reset(new scene::game_main());
+    });
+}
+
 LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp){
     switch(msg){
     case WM_DROPFILES:
@@ -2114,18 +2316,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp){
                 clover_system::decoder.reset(new AudioDecoder(path));
                 clover_system::on_dd = clover_system::decoder->open() != -1;
                 if(!clover_system::on_dd){
-                    clover_system::action_queue.push_back([](){
-                        clover_system::current_loop.reset(new scene::title());
-                    });
+                    transition_title();
                 }else{
                     WINDOWINFO info;
                     GetWindowInfo(GetMainWindowHandle(), &info);
                     SetWindowPos(GetMainWindowHandle(), HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
                     SetFocus(GetMainWindowHandle());
                     clover_system::sound_thread = std::move(std::thread(play_sound));
-                    clover_system::action_queue.push_back([](){
-                        clover_system::current_loop.reset(new scene::game_main());
-                    });
+                    transition_game_main();
                 }
             }
             DragFinish(hdrop);
@@ -2138,6 +2336,37 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp){
 
     return 0;
 }
+
+struct volume_file_manager_type{
+    const char filename[7] = { 'v', 'o', 'l', 'u', 'm', 'e', 0 };
+
+    union data_field_type{
+        float float_data;
+        char char_data[sizeof(float)];
+    };
+
+    // load volume
+    volume_file_manager_type(){
+        data_field_type data_field;
+        std::ifstream ifile(filename, std::ios::binary);
+        if(ifile.fail()){
+            std::ofstream ofile(filename, std::ios::binary);
+            data_field.float_data = music_volume;
+            ofile.write(data_field.char_data, sizeof(float));
+            ifile.open(filename);
+        }
+        ifile.read(data_field.char_data, sizeof(float));
+        music_volume = data_field.float_data;
+    }
+
+    // save volume
+    ~volume_file_manager_type(){
+        data_field_type data_field;
+        std::ofstream ofile(filename, std::ios::binary);
+        data_field.float_data = music_volume;
+        ofile.write(data_field.char_data, sizeof(float));
+    }
+} volume_manager;
 
 //-------- WinMain
 int WINAPI WinMain(HINSTANCE handle, HINSTANCE prev_handle, LPSTR lp_cmd, int n_cmd_show){
@@ -2152,7 +2381,7 @@ int WINAPI WinMain(HINSTANCE handle, HINSTANCE prev_handle, LPSTR lp_cmd, int n_
     }
 
     // load sound
-    sound_effect::hit.reset(new AudioDecoder("d/hit.mp3"));
+    sound_effect::hit.reset(new AudioDecoder("d/hit.wav"));
     if(sound_effect::hit->open() != 0){
         return -1;
     }
